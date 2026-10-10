@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { DEFAULT_MODEL, DEFAULT_BLOCKED_SITES, type HomepageModel } from "@homepage/agent-core";
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  DEFAULT_BLOCKED_SITES,
+  defaultModelFor,
+  type HomepageModel,
+  type Provider,
+} from "@homepage/agent-core";
 import { DEFAULT_REBUILD_INTERVAL_HOURS } from "@/lib/auto-rebuild";
 import { BUILD_STEPS } from "@/lib/protocol";
 import { KEYS, extensionStore, loadHomepage, loadSettings, saveSetting } from "@/lib/storage";
@@ -14,6 +21,7 @@ import { useHomepageBuild } from "./useHomepageBuild";
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [apiKey, setApiKey] = useState<string | null>(null);
+  const [provider, setProvider] = useState<Provider>(DEFAULT_PROVIDER);
   const [systemPrompt, setSystemPrompt] = useState("");
   const [blockedSites, setBlockedSites] = useState<string[]>(DEFAULT_BLOCKED_SITES);
   const [model, setModel] = useState<HomepageModel>(DEFAULT_MODEL);
@@ -47,6 +55,7 @@ export default function App() {
           extensionStore.get<string>(KEYS.activeSessionId),
         ]);
         setApiKey(settings.apiKey);
+        setProvider(settings.provider);
         setSystemPrompt(settings.systemPrompt);
         setBlockedSites(settings.blockedSites);
         setModel(settings.model);
@@ -60,9 +69,16 @@ export default function App() {
     })();
   }, []);
 
-  const saveKey = useCallback(async (key: string) => {
-    await saveSetting("apiKey", key);
+  const saveKey = useCallback(async (key: string, nextProvider: Provider) => {
+    const nextModel = defaultModelFor(nextProvider);
+    await Promise.all([
+      saveSetting("apiKey", key),
+      saveSetting("provider", nextProvider),
+      saveSetting("model", nextModel),
+    ]);
     setApiKey(key);
+    setProvider(nextProvider);
+    setModel(nextModel);
   }, []);
 
   const savePrompt = useCallback(
@@ -78,6 +94,12 @@ export default function App() {
   );
 
   // These persist immediately; the worker reads them on its next heartbeat or build.
+  const changeProvider = useCallback(async (next: Provider) => {
+    const nextModel = defaultModelFor(next);
+    setProvider(next);
+    setModel(nextModel);
+    await Promise.all([saveSetting("provider", next), saveSetting("model", nextModel)]);
+  }, []);
   const changeModel = useCallback(async (next: HomepageModel) => {
     setModel(next);
     await saveSetting("model", next);
@@ -120,7 +142,7 @@ export default function App() {
           <button style={btn} onClick={() => build()}>
             Build today&apos;s homepage
           </button>
-          {resumable && (
+          {resumable && provider === "anthropic" && !resumable.startsWith("gemini-") && (
             <button style={{ ...btn, backgroundColor: "#555" }} onClick={() => build({ resume: true })}>
               Resume interrupted build
             </button>
@@ -209,6 +231,8 @@ export default function App() {
         <SettingsModal
           initialPrompt={systemPrompt}
           blockedSites={blockedSites}
+          provider={provider}
+          onChangeProvider={changeProvider}
           model={model}
           onChangeModel={changeModel}
           autoRebuild={autoRebuild}

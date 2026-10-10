@@ -16,18 +16,21 @@ terminal, a zine.
 
 > **Privacy, up front.** To build your homepage, the extension sends a summary of
 > your browsing history (top domains, visit counts, a few page titles) and the
-> cleaned-up HTML of up to 8 pages to the Anthropic API, using your own API key.
-> Those pages are loaded in your signed-in browser, so they can include private
-> content. The agent session and every uploaded page are deleted when each build
-> ends. Your API key stays in the extension's local storage. More detail in
-> [ARCHITECTURE.md](./ARCHITECTURE.md#privacy).
+> cleaned-up HTML of up to 8 pages to **the provider you choose** (Anthropic or
+> Google Gemini), using your own API key. Those pages are loaded in your signed-in
+> browser, so they can include private content. On the Anthropic path, the agent
+> session and every uploaded page are deleted when each build ends. Your API key
+> stays in the extension's local storage. More detail in
+> [ARCHITECTURE.md](./ARCHITECTURE.md#privacy) and [GEMINI.md](./GEMINI.md).
 
 ---
 
 ## Install
 
 You need Chrome (or another Chromium browser), [Node.js](https://nodejs.org) 20+,
-and an [Anthropic API key](https://console.anthropic.com).
+and an API key from either [Google AI Studio (Gemini)](https://aistudio.google.com/apikey)
+or [Anthropic](https://console.anthropic.com). See [GEMINI.md](./GEMINI.md) for the
+Gemini-specific path.
 
 ```bash
 git clone https://github.com/ThariqS/ai-newtab.git
@@ -48,7 +51,8 @@ If Chrome asks whether to keep the changed new-tab page, choose **Keep it**.
 
 ## Your first homepage
 
-1. Open a new tab and paste your Anthropic API key.
+1. Open a new tab, pick **Google Gemini** or **Anthropic**, and paste your API key
+   (`AIza…` for Gemini, `sk-ant-…` for Anthropic).
 2. Click **Build today's homepage**.
 3. Watch it work. The progress view walks through each step: preparing the
    agent, reading your history, opening pages in your browser, analyzing them,
@@ -82,13 +86,15 @@ history summaries and URLs requested through `getPageHtml`. A page that redirect
 onto a blocked host is dropped before its content is uploaded. Local-network
 addresses (localhost, private IPs, `.local` and `.internal` hosts) are always blocked.
 
-**Model.** Choose which Claude model writes your page:
+**Provider.** Google Gemini (function-calling loop; see [GEMINI.md](./GEMINI.md))
+or Anthropic (Claude Managed Agents).
 
-- **Claude Sonnet 5.5** (default): the best balance of quality and cost.
-- **Claude Haiku 5.5**: the fastest and cheapest.
-- **Claude Opus 5.5**: the most careful editor, and the most expensive.
+**Model.** Depends on the provider:
 
-The new model takes effect from your next build.
+- **Gemini:** Gemini 2.5 Flash (default), Gemini 2.5 Pro, Gemini 3.8 Flash.
+- **Anthropic:** Claude Sonnet 5.5 (default), Haiku 5.5, Opus 5.5.
+
+The new provider/model takes effect from your next build.
 
 **Rebuild automatically.** On by default. Once your homepage is older than the
 interval you pick (6, 12, 24 or 48 hours), the extension rebuilds it quietly in the
@@ -107,8 +113,9 @@ failed build until the next interval, so it never loops.
   marketing pages. Anything it can't open is reported, not hidden.
 - **Links are real.** Every link on the page comes from a page the agent actually
   read. It's told never to invent a URL.
-- **Interrupted builds.** If Chrome closes mid-build, the new tab offers
-  **Resume interrupted build** next time.
+- **Interrupted builds.** On the Anthropic path, if Chrome closes mid-build the
+  new tab offers **Resume interrupted build**. Gemini builds start fresh (no
+  Managed Agents session to reattach).
 - **Updating.** After pulling new code, run `npx pnpm@10.11.1 build` again, then
   click the reload icon on the extension in `chrome://extensions`.
 
@@ -121,14 +128,19 @@ failed build until the next interval, so it never loops.
    files inside its sandbox.
 4. **`write`**: it writes one React component, which the new tab renders.
 
-The extension's background worker drives a
-[Claude Managed Agents](https://docs.claude.com) session directly, with no server
-in between. The two custom tools run in the extension because they need
-`chrome.history` and `chrome.tabs`. Everything else happens in the agent's
-sandbox, where shell access is off: scraped pages are untrusted input.
+**Anthropic path:** the background worker drives a
+[Claude Managed Agents](https://docs.claude.com) session; scraped pages are
+mounted into a sandbox (`grep` / `read` / `write`). Shell access is off.
 
-See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the event flow, the layout, and
-the gotchas worth knowing.
+**Gemini path:** the worker runs a `generateContent` function-calling loop
+against the Gemini API; page HTML is returned inline (truncated) and the homepage
+is delivered as a fenced TSX block. Details in **[GEMINI.md](./GEMINI.md)**.
+
+The two custom tools always run in the extension because they need
+`chrome.history` and `chrome.tabs`. There is no server in between.
+
+See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the Anthropic event flow, the
+layout, and the gotchas worth knowing.
 
 ## Development
 
@@ -144,7 +156,7 @@ pnpm typecheck           # all packages
 pnpm test                # unit tests (no API calls; needs Bun)
 pnpm extension:test      # loads the built extension into headless Chrome (no API calls)
 
-cp .env.example .env     # add ANTHROPIC_API_KEY, then:
+cp .env.example .env     # add ANTHROPIC_API_KEY (and/or GEMINI_API_KEY), then:
 pnpm agent:run           # a full build against the real API, with fixture history
 pnpm agent:verify        # check the output actually renders
 ```

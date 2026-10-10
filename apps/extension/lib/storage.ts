@@ -1,10 +1,15 @@
 import {
-  DEFAULT_MODEL,
   DEFAULT_BLOCKED_SITES,
-  MODEL_CHOICES,
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  defaultModelFor,
+  isValidModel,
+  modelsFor,
+  providerForModel,
   STORAGE_KEYS as AGENT_KEYS,
   type HomepageModel,
   type KVStore,
+  type Provider,
 } from "@homepage/agent-core";
 
 /**
@@ -36,6 +41,7 @@ export interface Homepage {
 
 export interface Settings {
   apiKey: string | null;
+  provider: Provider;
   systemPrompt: string;
   blockedSites: string[];
   model: HomepageModel;
@@ -61,28 +67,47 @@ export const extensionStore: KVStore = {
 export async function loadSettings(): Promise<Settings> {
   const s = await browser.storage.local.get([
     KEYS.apiKey,
+    KEYS.provider,
     KEYS.systemPrompt,
     KEYS.blockedSites,
     KEYS.model,
     KEYS.autoRebuild,
     KEYS.rebuildIntervalHours,
   ]);
-  const model = s[KEYS.model] as string | undefined;
+  const storedModel = s[KEYS.model] as string | undefined;
+  const storedProvider = s[KEYS.provider] as Provider | undefined;
+  // Infer provider from a previously saved model when provider was never stored.
+  const provider: Provider =
+    storedProvider === "anthropic" || storedProvider === "gemini"
+      ? storedProvider
+      : storedModel
+        ? providerForModel(storedModel)
+        : DEFAULT_PROVIDER;
+  const model: HomepageModel = isValidModel(provider, storedModel ?? "")
+    ? (storedModel as HomepageModel)
+    : defaultModelFor(provider);
+
   return {
     apiKey: (s[KEYS.apiKey] as string | undefined) ?? null,
+    provider,
     systemPrompt: (s[KEYS.systemPrompt] as string | undefined) ?? "",
     blockedSites: (s[KEYS.blockedSites] as string[] | undefined) ?? [...DEFAULT_BLOCKED_SITES],
-    // Fall back if a stored model is no longer offered.
-    model: MODEL_CHOICES.find((m) => m.id === model)?.id ?? DEFAULT_MODEL,
+    model,
     autoRebuild: s[KEYS.autoRebuild] !== false,
     rebuildIntervalHours: (s[KEYS.rebuildIntervalHours] as number | undefined) ?? null,
   };
 }
 
-export async function saveSetting<K extends "apiKey" | "systemPrompt" | "blockedSites" | "model" | "autoRebuild" | "rebuildIntervalHours">(
-  key: K,
-  value: Settings[K],
-): Promise<void> {
+export async function saveSetting<
+  K extends
+    | "apiKey"
+    | "provider"
+    | "systemPrompt"
+    | "blockedSites"
+    | "model"
+    | "autoRebuild"
+    | "rebuildIntervalHours",
+>(key: K, value: Settings[K]): Promise<void> {
   await browser.storage.local.set({ [KEYS[key]]: value });
 }
 
@@ -94,3 +119,5 @@ export async function saveHomepage(code: string): Promise<void> {
   const homepage: Homepage = { code, timestamp: new Date().toISOString() };
   await extensionStore.set(KEYS.homepage, homepage);
 }
+
+export { modelsFor };

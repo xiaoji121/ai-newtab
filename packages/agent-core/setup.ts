@@ -1,29 +1,20 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { HOMEPAGE_SYSTEM_PROMPT } from "./prompt";
+import { DEFAULT_ANTHROPIC_MODEL, type AnthropicModel } from "./providers";
 import { GET_HISTORY_SCHEMA, GET_PAGE_HTML_SCHEMA } from "./schemas";
 import type { KVStore } from "./types";
-
-/** Models offered in Settings. The first is the default. */
-export const MODEL_CHOICES = [
-  { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5" },
-  { id: "claude-haiku-5-5", label: "Claude Haiku 5.5" },
-  { id: "claude-opus-5-5", label: "Claude Opus 5.5" },
-] as const;
-
-export type HomepageModel = (typeof MODEL_CHOICES)[number]["id"];
-
-export const DEFAULT_MODEL: HomepageModel = "claude-sonnet-5-5";
 
 /**
  * An agent is pinned to its model, so each model gets its own cached agent.
  * Switching back and forth reuses them instead of provisioning a new one per switch.
  */
-export function agentIdKey(model: HomepageModel): string {
+export function agentIdKey(model: AnthropicModel): string {
   return `agentId-${model.replace(/^claude-/, "")}`;
 }
 
 export const STORAGE_KEYS = {
   apiKey: "apiKey",
+  provider: "provider",
   agentVersion: "agentVersion",
   environmentId: "environmentId",
   activeSessionId: "activeSessionId",
@@ -77,7 +68,7 @@ export async function ensureEnvironment(
  * metadata; when the code changes (e.g. after pulling an update), the agent is
  * updated in place instead of silently running the old definition.
  */
-function agentDefinition(model: HomepageModel) {
+function agentDefinition(model: AnthropicModel) {
   return {
     name: AGENT_NAME,
     model,
@@ -130,7 +121,7 @@ async function fingerprint(definition: object): Promise<string> {
 export async function ensureAgent(
   client: Anthropic,
   store: KVStore,
-  model: HomepageModel = DEFAULT_MODEL,
+  model: AnthropicModel = DEFAULT_ANTHROPIC_MODEL,
 ): Promise<string> {
   const definition = agentDefinition(model);
   const metadata = { config: await fingerprint(definition) };

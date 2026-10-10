@@ -3,7 +3,8 @@ import { buildHistoryDigest, slugifyUrl } from "./history-digest";
 import { OUTPUT_PATH, buildKickoffMessage } from "./prompt";
 import { DEFAULT_BLOCKED_SITES, isAllowedUrl, isBlocked, normalizeBlockList } from "./site-filter";
 import { DEFAULTS } from "./schemas";
-import { STORAGE_KEYS, ensureAgent, ensureEnvironment, type HomepageModel } from "./setup";
+import type { AnthropicModel } from "./providers";
+import { STORAGE_KEYS, ensureAgent, ensureEnvironment } from "./setup";
 import type {
   BrowserBridge,
   GetHistoryResult,
@@ -41,7 +42,7 @@ export interface RunOptions {
    */
   blockedSites?: string[] | (() => Promise<string[]>);
   /** Ignored when resuming: the session keeps the agent (and model) it started with. */
-  model?: HomepageModel;
+  model?: AnthropicModel;
   callbacks?: RunCallbacks;
   signal?: AbortSignal;
   /** Reattach to an existing session instead of creating one (e.g. after the host was killed mid-run). */

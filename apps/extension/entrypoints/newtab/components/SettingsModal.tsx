@@ -1,11 +1,18 @@
 import { useState } from "react";
-import { MODEL_CHOICES, normalizeBlockList, type HomepageModel } from "@homepage/agent-core";
+import {
+  modelsFor,
+  normalizeBlockList,
+  type HomepageModel,
+  type Provider,
+} from "@homepage/agent-core";
 import { REBUILD_INTERVAL_CHOICES } from "@/lib/auto-rebuild";
 import { btn } from "./ui";
 
 export function SettingsModal({
   initialPrompt,
   blockedSites,
+  provider,
+  onChangeProvider,
   model,
   onChangeModel,
   autoRebuild,
@@ -17,6 +24,8 @@ export function SettingsModal({
 }: {
   initialPrompt: string;
   blockedSites: string[];
+  provider: Provider;
+  onChangeProvider: (next: Provider) => void;
   model: HomepageModel;
   onChangeModel: (next: HomepageModel) => void;
   autoRebuild: boolean;
@@ -28,6 +37,7 @@ export function SettingsModal({
 }) {
   const [draft, setDraft] = useState(initialPrompt);
   const [blockedDraft, setBlockedDraft] = useState(blockedSites.join("\n"));
+  const choices = modelsFor(provider);
 
   return (
     <div
@@ -74,19 +84,38 @@ export function SettingsModal({
         <label
           style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 16, color: "#333", fontSize: 14 }}
         >
+          Provider
+          <select
+            value={provider}
+            onChange={(e) => onChangeProvider(e.target.value as Provider)}
+            style={{ padding: "4px 8px", fontSize: 14, borderRadius: 4, border: "1px solid #ddd" }}
+          >
+            <option value="gemini">Google Gemini</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </label>
+        <label
+          style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, color: "#333", fontSize: 14 }}
+        >
           Model
           <select
             value={model}
             onChange={(e) => onChangeModel(e.target.value as HomepageModel)}
             style={{ padding: "4px 8px", fontSize: 14, borderRadius: 4, border: "1px solid #ddd" }}
           >
-            {MODEL_CHOICES.map((m) => (
+            {choices.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.label}
               </option>
             ))}
           </select>
         </label>
+        {provider === "gemini" && (
+          <p style={{ color: "#888", fontSize: 12, margin: "6px 0 0" }}>
+            Gemini builds deliver the homepage via a fenced code block (no Managed Agents
+            sandbox). Interrupted builds cannot be resumed on this path.
+          </p>
+        )}
         <label
           style={{
             display: "flex",

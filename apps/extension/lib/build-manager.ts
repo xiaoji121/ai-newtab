@@ -1,5 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { runHomepageBuild, type RunPhase } from "@homepage/agent-core";
+import {
+  runHomepageBuild,
+  runGeminiHomepageBuild,
+  type AnthropicModel,
+  type GeminiModel,
+  type RunPhase,
+} from "@homepage/agent-core";
 import { rebuildIntervalMs, shouldAutoRebuild } from "./auto-rebuild";
 import { browserBridge } from "./browser-bridge";
 import {
@@ -141,12 +147,12 @@ export class BuildManager {
       return; // single-flight: a second start just attaches.
     }
 
-    const { apiKey, systemPrompt, model } = await loadSettings();
+    const { apiKey, systemPrompt, model, provider } = await loadSettings();
     if (!apiKey) {
       // Manual builds are gated behind the key-setup screen and auto-builds
       // require a key, so this only happens if the key was removed.
       console.warn("[BuildManager] startBuild aborted — no API key in storage");
-      const message = "No Anthropic API key found. Add your key and try again.";
+      const message = "No API key found. Add your Anthropic or Gemini key and try again.";
       this.state = { ...INITIAL_BUILD_STATE, phase: "error", error: message };
       this.broadcast({ kind: "error", message });
       return;
@@ -157,32 +163,51 @@ export class BuildManager {
     this.state = { ...INITIAL_BUILD_STATE, running: true, phase: "setup" };
     this.broadcast({ kind: "snapshot", state: this.state });
     this.startKeepalive();
-    console.log("[BuildManager] build started", { resume: Boolean(opts.resume) });
+    console.log("[BuildManager] build started", { resume: Boolean(opts.resume), provider });
 
     try {
-      // The key is the user's own, read from local storage — there is no server
-      // to hide it behind. See ARCHITECTURE.md → Privacy.
-      const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+      const callbacks = {
+        onPhase: (phase: RunPhase, detail?: string) => this.onPhase(phase, detail),
+        onText: (chunk: string) => this.onText(chunk),
+        onLog: (line: string) => this.onLog(line),
+      };
+      const blockedSites = async () => (await loadSettings()).blockedSites;
 
-      const resumeSessionId = opts.resume
-        ? await extensionStore.get<string>(KEYS.activeSessionId)
-        : undefined;
-
-      const result = await runHomepageBuild({
-        client,
-        bridge: browserBridge,
-        store: extensionStore,
-        userSystemPrompt: systemPrompt,
-        blockedSites: async () => (await loadSettings()).blockedSites,
-        model,
-        resumeSessionId,
-        signal: this.controller.signal,
-        callbacks: {
-          onPhase: (phase, detail) => this.onPhase(phase, detail),
-          onText: (chunk) => this.onText(chunk),
-          onLog: (line) => this.onLog(line),
-        },
-      });
+      let result;
+      if (provider === "gemini") {
+        // Gemini has no Managed Agents session — ignore resume requests.
+        if (opts.resume) {
+          this.onLog("Gemini builds cannot resume an interrupted session; starting fresh.");
+        }
+        result = await runGeminiHomepageBuild({
+          apiKey,
+          bridge: browserBridge,
+          store: extensionStore,
+          userSystemPrompt: systemPrompt,
+          blockedSites,
+          model: model as GeminiModel,
+          signal: this.controller.signal,
+          callbacks,
+        });
+      } else {
+        // The key is the user's own, read from local storage — there is no server
+        // to hide it behind. See ARCHITECTURE.md → Privacy.
+        const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
+        const resumeSessionId = opts.resume
+          ? await extensionStore.get<string>(KEYS.activeSessionId)
+          : undefined;
+        result = await runHomepageBuild({
+          client,
+          bridge: browserBridge,
+          store: extensionStore,
+          userSystemPrompt: systemPrompt,
+          blockedSites,
+          model: model as AnthropicModel,
+          resumeSessionId,
+          signal: this.controller.signal,
+          callbacks,
+        });
+      }
 
       // Persist the raw TSX; the page transpiles it for preview.
       await saveHomepage(result.code);
